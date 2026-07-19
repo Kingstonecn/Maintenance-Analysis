@@ -52,6 +52,45 @@ const Charts = {
     }
   },
 
+  _abbr(n) {
+    if (n == null) return '';
+    const abs = Math.abs(n);
+    if (abs >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (abs >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
+    return String(n);
+  },
+
+  _barLabelPlugin() {
+    return {
+      id: 'barLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        chart.data.datasets.forEach((dataset, di) => {
+          const meta = chart.getDatasetMeta(di);
+          if (meta.type === 'line') return;
+          meta.data.forEach((bar, bi) => {
+            const val = dataset.data[bi];
+            if (val == null) return;
+            ctx.save();
+            ctx.font = '10px "JetBrains Mono", monospace';
+            ctx.fillStyle = '#3a2f25';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            const pos = bar.tooltipPosition();
+            if (chart.config.type === 'bar' && chart.options.indexAxis !== 'y') {
+              ctx.fillText(Charts._abbr(val), pos.x, pos.y - 2);
+            } else {
+              ctx.textAlign = 'left';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(Charts._abbr(val), pos.x + 4, pos.y);
+            }
+            ctx.restore();
+          });
+        });
+      }
+    };
+  },
+
   bar(canvasId, labels, datasets, opts) {
     Charts._destroy(canvasId);
     const ctx = Charts._getCtx(canvasId);
@@ -64,7 +103,8 @@ const Charts = {
         borderColor: d.borderColor || Charts._colors[i % Charts._colors.length],
         borderWidth: d.borderWidth || 1
       }))},
-      options: Charts._mergeOpts(opts)
+      options: Charts._mergeOpts(opts),
+      plugins: [Charts._barLabelPlugin()]
     };
     const chart = new Chart(ctx, config);
     Charts._instances.set(canvasId, chart);
@@ -104,7 +144,7 @@ const Charts = {
     const config = {
       type: 'pie',
       data: { labels, datasets: [{ data, backgroundColor: labels.map((_, i) => Charts._colors[i % Charts._colors.length]), borderWidth: 1, borderColor: '#f3ecdc' }] },
-      options: Charts._mergeOpts({ ...opts, scales: {} })
+      options: Charts._mergeOpts({ ...opts, scales: false })
     };
     const chart = new Chart(ctx, config);
     Charts._instances.set(canvasId, chart);
@@ -115,10 +155,11 @@ const Charts = {
     Charts._destroy(canvasId);
     const ctx = Charts._getCtx(canvasId);
     if (!ctx) return null;
+    const total = data.reduce((s, v) => s + v, 0);
     const config = {
       type: 'doughnut',
       data: { labels, datasets: [{ data, backgroundColor: labels.map((_, i) => Charts._colors[i % Charts._colors.length]), borderWidth: 1, borderColor: '#f3ecdc' }] },
-      options: Charts._mergeOpts({ ...opts, scales: {} })
+      options: Charts._mergeOpts({ ...opts, scales: false, plugins: { tooltip: { callbacks: { label: function(ctx) { const pct = total ? (ctx.parsed / total * 100).toFixed(1) : 0; return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)'; } } } } })
     };
     const chart = new Chart(ctx, config);
     Charts._instances.set(canvasId, chart);

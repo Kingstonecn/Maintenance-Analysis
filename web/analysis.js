@@ -610,7 +610,7 @@ function execShiftEfficiency(rows) {
 
 function execRepairerCompare(rows) {
   const groups = groupBy(rows, 'X');
-  const entries = Object.entries(groups).map(([p, rs]) => { const durs = rs.map(r => numVal(r, 'AK')).filter(v => v != null && v > 0); return [p, durs.length, mean(durs).toFixed(3), ss.median(durs).toFixed(3)]; }).filter(e => e[0] && e[1] >= 5).sort((a, b) => b[2] - a[2]).slice(0, 20);
+  const entries = Object.entries(groups).map(([p, rs]) => { const durs = rs.map(r => numVal(r, 'AK')).filter(v => v != null && v > 0); if (!durs.length) return null; return [p, durs.length, mean(durs).toFixed(3), ss.median(durs).toFixed(3)]; }).filter(e => e && e[0] && e[1] >= 5).sort((a, b) => b[2] - a[2]).slice(0, 20);
   const tblRows = entries.map((e, i) => [i + 1, ...e]);
   return chartCanvas('ac41') + renderTable(['排名','维修人','样本数','平均维修时长','中位数'], tblRows) +
     '<script>Charts.horizontalBar("ac41",' + JSON.stringify(entries.map(e => e[0])) + ',[{label:"平均维修时长",data:' + JSON.stringify(entries.map(e => +e[2])) + '}])</script>' +
@@ -726,7 +726,7 @@ function execHighCostOutlier(rows) {
 
 function execCostVsLevel(rows) {
   const groups = groupBy(rows, 'P');
-  const entries = Object.entries(groups).map(([level, rs]) => { const costs = rs.map(r => numVal(r, 'AQ')).filter(v => v != null && v > 0); return [level, costs.length, mean(costs).toFixed(2), ss.median(costs).toFixed(2), ss.min(costs).toFixed(2), ss.max(costs).toFixed(2)]; }).filter(e => e[0] && e[1] > 0);
+  const entries = Object.entries(groups).map(([level, rs]) => { const costs = rs.map(r => numVal(r, 'AQ')).filter(v => v != null && v > 0); if (!costs.length) return null; return [level, costs.length, mean(costs).toFixed(2), ss.median(costs).toFixed(2), ss.min(costs).toFixed(2), ss.max(costs).toFixed(2)]; }).filter(e => e && e[0] && e[1] > 0);
   const tblRows = entries;
   return chartCanvas('ac53') + renderTable(['故障等级','样本数','平均成本','中位数','最小值','最大值'], tblRows) +
     '<script>Charts.bar("ac53",' + JSON.stringify(entries.map(e => e[0])) + ',[{label:"平均成本",data:' + JSON.stringify(entries.map(e => +e[2])) + '},{label:"中位数",data:' + JSON.stringify(entries.map(e => +e[3])) + '}])</script>' +
@@ -747,14 +747,14 @@ function execScoreCorrelation(rows) {
   const names = ['维修质量', '现场维修', '重复维修', '及时性', '总分'];
   const validRows = rows.filter(r => cols.every(c => numVal(r, c) != null));
   if (validRows.length < 2) return '<p class="no-data">有效数据不足，无法计算相关系数</p>';
-  const matrix = cols.map(c1 => cols.map(c2 => { const x = validRows.map(r => numVal(r, c1)); const y = validRows.map(r => numVal(r, c2)); return ss.pearsonCorrelation(x, y).toFixed(3); }));
+  const matrix = cols.map(c1 => cols.map(c2 => { const x = validRows.map(r => numVal(r, c1)); const y = validRows.map(r => numVal(r, c2)); return ss.sampleCorrelation(x, y).toFixed(3); }));
   const tblRows = matrix.map((row, i) => [names[i], ...row]);
   return '<p class="analysis-info">Pearson 相关系数矩阵（' + validRows.length + ' 条有效数据）</p>' + renderTable(['', ...names], tblRows) + exportCsvBtn('score-correlation', ['', ...names], tblRows);
 }
 
 function execRepairerScore(rows) {
   const groups = groupBy(rows, 'X');
-  const entries = Object.entries(groups).map(([p, rs]) => { const scores = rs.map(r => numVal(r, 'BD')).filter(v => v != null); return [p, scores.length, mean(scores).toFixed(3), ss.median(scores).toFixed(3)]; }).filter(e => e[0] && e[1] >= 5).sort((a, b) => parseFloat(b[2]) - parseFloat(a[2])).slice(0, 30);
+  const entries = Object.entries(groups).map(([p, rs]) => { const scores = rs.map(r => numVal(r, 'BD')).filter(v => v != null); if (!scores.length) return null; return [p, scores.length, mean(scores).toFixed(3), ss.median(scores).toFixed(3)]; }).filter(e => e && e[0] && e[1] >= 5).sort((a, b) => parseFloat(b[2]) - parseFloat(a[2])).slice(0, 30);
   const tblRows = entries.map((e, i) => [i + 1, ...e]);
   return chartCanvas('ac56') + renderTable(['排名','维修人','评分样本数','平均总分','中位数'], tblRows, 30) +
     '<script>Charts.horizontalBar("ac56",' + JSON.stringify(entries.map(e => e[0])) + ',[{label:"平均总分",data:' + JSON.stringify(entries.map(e => +e[2])) + '}])</script>' +
@@ -763,8 +763,8 @@ function execRepairerScore(rows) {
 
 function execWsScore(rows) {
   const groups = groupBy(rows, 'F');
-  const entries = Object.entries(groups).map(([ws, rs]) => { const scores = rs.map(r => numVal(r, 'BD')).filter(v => v != null); return [ws, scores.length, mean(scores).toFixed(3)]; }).filter(e => e[1] >= 5).sort((a, b) => parseFloat(b[2]) - parseFloat(a[2]));
-  const tblRows = entries.map(e => e);
+  const entries = Object.entries(groups).map(([ws, rs]) => { const scores = rs.map(r => numVal(r, 'BD')).filter(v => v != null); if (!scores.length) return null; return [ws, scores.length, mean(scores).toFixed(3)]; }).filter(e => e && e[1] >= 5).sort((a, b) => parseFloat(b[2]) - parseFloat(a[2]));
+  const tblRows = entries;
   return chartCanvas('ac57') + renderTable(['车间','评分样本数','平均总分'], tblRows) +
     '<script>Charts.bar("ac57",' + JSON.stringify(entries.map(e => e[0])) + ',[{label:"平均总分",data:' + JSON.stringify(entries.map(e => +e[2])) + '}])</script>' +
     exportCsvBtn('ws-score', ['车间','评分样本数','平均总分'], tblRows);
@@ -802,7 +802,7 @@ function execDurVsLevel(rows) {
 function execWaitVsScore(rows) {
   const data = rows.map(r => ({ wait: numVal(r, 'AI'), score: numVal(r, 'BD') })).filter(d => d.wait != null && d.score != null);
   if (!data.length) return '<p class="no-data">无有效数据</p>';
-  const corr = ss.pearsonCorrelation(data.map(d => d.wait), data.map(d => d.score));
+  const corr = ss.sampleCorrelation(data.map(d => d.wait), data.map(d => d.score));
   const sample = data.slice(0, 200).map(d => ({ x: d.wait, y: d.score }));
   const tblRows = [['样本数', data.length], ['Pearson相关系数', corr.toFixed(4)], ['等待时长均值', mean(data.map(d => d.wait)).toFixed(3)], ['评分均值', mean(data.map(d => d.score)).toFixed(3)]];
   return chartCanvas('ac61') + renderTable(['指标','值'], tblRows) +
@@ -814,7 +814,7 @@ function execFreqVsCost(rows) {
   const groups = groupBy(rows, 'L');
   const data = Object.entries(groups).map(([equip, rs]) => ({ x: rs.length, y: sum(rs.map(r => numVal(r, 'AQ') || 0)) })).filter(d => d.y > 0);
   if (data.length < 2) return '<p class="no-data">有效设备数据不足</p>';
-  const corr = ss.pearsonCorrelation(data.map(d => d.x), data.map(d => d.y));
+  const corr = ss.sampleCorrelation(data.map(d => d.x), data.map(d => d.y));
   const tblRows = [['设备数', data.length], ['Pearson相关系数', corr.toFixed(4)]];
   return chartCanvas('ac62') + renderTable(['指标','值'], tblRows) +
     '<script>Charts.scatter("ac62",[{label:"故障频率vs成本",data:' + JSON.stringify(data) + '}],{scales:{x:{title:{display:true,text:"故障次数"}},y:{title:{display:true,text:"维修总成本"}}}})</script>' +
@@ -840,7 +840,7 @@ function execEquipTypeVsFault(rows) {
 function execParticipantsVsDur(rows) {
   const data = rows.map(r => { const ah = strVal(r, 'AH'); const cnt = ah ? ah.split(',').length : 1; const dur = numVal(r, 'AK'); return { x: cnt, y: dur }; }).filter(d => d.y != null && d.y > 0);
   if (data.length < 2) return '<p class="no-data">有效数据不足</p>';
-  const corr = ss.pearsonCorrelation(data.map(d => d.x), data.map(d => d.y));
+  const corr = ss.sampleCorrelation(data.map(d => d.x), data.map(d => d.y));
   const sample = data.slice(0, 200);
   const tblRows = [['样本数', data.length], ['Pearson相关系数', corr.toFixed(4)], ['平均参与人数', mean(data.map(d => d.x)).toFixed(2)], ['平均维修时长', mean(data.map(d => d.y)).toFixed(3)]];
   return chartCanvas('ac65') + renderTable(['指标','值'], tblRows) +
@@ -854,7 +854,7 @@ function execDurRegression(rows) {
   if (data.length < 2) return '<p class="no-data">有效数据不足，无法进行回归分析</p>';
   const y = data.map(d => d.dur);
   const result = ss.linearRegression(data.map((d, i) => ({ x: d.levelNum, y: y[i] })));
-  const corr = ss.pearsonCorrelation(data.map(d => d.levelNum), y);
+  const corr = ss.sampleCorrelation(data.map(d => d.levelNum), y);
   const tblRows = [['样本数', data.length], ['回归方程', '维修时长 ≈ ' + result.m.toFixed(3) + ' × 故障等级 + ' + result.b.toFixed(3)], ['R²', (corr * corr).toFixed(4)], ['A级平均时长', mean(data.filter(d => d.level === 'A级').map(d => d.dur)).toFixed(3)], ['B级平均时长', mean(data.filter(d => d.level === 'B级').map(d => d.dur)).toFixed(3)], ['C级平均时长', mean(data.filter(d => d.level === 'C级').map(d => d.dur)).toFixed(3)]];
   return '<p class="analysis-info">基于故障等级和班次的线性回归</p>' + renderTable(['指标','值'], tblRows) + exportCsvBtn('dur-regression', ['指标','值'], tblRows);
 }
@@ -863,7 +863,7 @@ function execCostRegression(rows) {
   const data = rows.map(r => { const cost = numVal(r, 'AQ'); if (cost == null) return null; const dur = numVal(r, 'AK') || 0; return { cost, dur }; }).filter(Boolean);
   if (data.length < 2) return '<p class="no-data">有效数据不足，无法进行回归分析</p>';
   const result = ss.linearRegression(data.map(d => ({ x: d.dur, y: d.cost })));
-  const corr = ss.pearsonCorrelation(data.map(d => d.dur), data.map(d => d.cost));
+  const corr = ss.sampleCorrelation(data.map(d => d.dur), data.map(d => d.cost));
   const tblRows = [['样本数', data.length], ['回归方程', '维修成本 ≈ ' + result.m.toFixed(3) + ' × 维修时长 + ' + result.b.toFixed(2)], ['R²', (corr * corr).toFixed(4)], ['相关系数', corr.toFixed(4)]];
   return '<p class="analysis-info">维修时长 → 维修成本的线性回归</p>' + renderTable(['指标','值'], tblRows) + exportCsvBtn('cost-regression', ['指标','值'], tblRows);
 }
@@ -874,7 +874,7 @@ function execScoreRegression(rows) {
   const validRows = rows.filter(r => cols.every(c => numVal(r, c) != null) && numVal(r, 'BD') != null);
   if (validRows.length < 2) return '<p class="no-data">有效数据不足，无法进行回归分析</p>';
   const bd = validRows.map(r => numVal(r, 'BD'));
-  const results = cols.map((c, i) => { const x = validRows.map(r => numVal(r, c)); const corr = ss.pearsonCorrelation(x, bd); const reg = ss.linearRegression(x.map((xi, j) => ({ x: xi, y: bd[j] }))); return [names[i], corr.toFixed(4), (corr * corr).toFixed(4), reg.m.toFixed(3), reg.b.toFixed(3)]; });
+  const results = cols.map((c, i) => { const x = validRows.map(r => numVal(r, c)); const corr = ss.sampleCorrelation(x, bd); const reg = ss.linearRegression(x.map((xi, j) => ({ x: xi, y: bd[j] }))); return [names[i], corr.toFixed(4), (corr * corr).toFixed(4), reg.m.toFixed(3), reg.b.toFixed(3)]; });
   return '<p class="analysis-info">各评分维度对总分的回归系数（' + validRows.length + ' 条有效数据）</p>' + renderTable(['评分维度','相关系数','R²','斜率','截距'], results) + exportCsvBtn('score-regression', ['评分维度','相关系数','R²','斜率','截距'], results);
 }
 
