@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>维修数据分析 · Maintenance Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=Noto+Serif+SC:wght@400;500;700;900&family=Special+Elite&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+<div class="paper-edge" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="mast-left">
+    <span class="vol date-stamp" id="todayStamp">　</span>
+  </div>
+  <h1 class="title">
+    <span class="title-main">维&nbsp;修&nbsp;数&nbsp;据&nbsp;分&nbsp;析</span>
+    <span class="title-sub">Maintenance Analysis</span>
+  </h1>
+  <div class="mast-right"></div>
+  <div class="rule-thick"></div>
+  <div class="rule-thin"></div>
+</header>
+
+<p class="epigraph">
+  将维修数据 Excel 工作簿拖入下方，工具会在浏览器里本地解析并展示数据概览，随后提供多种分析维度供你筛选理想的分析方法。所有处理均在本地完成，文件不离开本机。
+  <span class="cite">— 维修数据分析工具</span>
+</p>
+
+<section id="stage-load" class="stage active">
+  <div class="load-wrap">
+    <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="拖入或选择 Excel 文件">
+      <div class="corner tl"></div><div class="corner tr"></div>
+      <div class="corner bl"></div><div class="corner br"></div>
+      <p class="dz-big">将 <code>Maintenance Data.xlsx</code> 拖至此处</p>
+      <p class="dz-sub">— 或 —</p>
+      <button class="btn-file" id="pickBtn">选取文件 / Select File</button>
+      <input type="file" id="fileInput" accept=".xlsx,.xlsm" hidden>
+      <p class="dz-foot">本地处理 · 文件不离开本机 · SheetJS 解析</p>
+    </div>
+    <aside class="load-note">
+      <h3>使用说明</h3>
+      <ol>
+        <li>读取 <b>Data</b> 主表，自动识别 57 列字段（维修单编号、状态、车间、设备、故障、维修时长等）。</li>
+        <li>载入后展示<b>数据概览</b>：总行数、车间分布、故障类型分布、维修状态分布等关键统计。</li>
+        <li>进入<b>分析面板</b>后可选择多种分析维度（简单统计、趋势分析、帕累托分析、设备MTBF/MTTR等）。</li>
+        <li>支持<b>图表导出</b>：将分析结果导出为图片或 CSV 数据。</li>
+      </ol>
+    </aside>
+  </div>
+</section>
+
+<section id="stage-overview" class="stage">
+  <div class="ledger-bar">
+    <div class="lb-item"><span class="lb-num" id="cntTotal">0</span><span class="lb-lbl">维修单总数</span></div>
+    <div class="lb-sep">/</div>
+    <div class="lb-item"><span class="lb-num" id="cntAssets">0</span><span class="lb-lbl">设备数量</span></div>
+    <div class="lb-sep">/</div>
+    <div class="lb-item"><span class="lb-num" id="cntWorkshops">0</span><span class="lb-lbl">车间数量</span></div>
+    <div class="lb-sep">/</div>
+    <div class="lb-item"><span class="lb-num" id="cntDateRange">—</span><span class="lb-lbl">日期范围</span></div>
+    <div class="lb-spacer"></div>
+    <button class="btn-back" id="backBtn">重新载入</button>
+    <button class="btn-export" id="exportBtn" disabled>导出数据</button>
+  </div>
+
+  <div class="collapsible-section">
+    <div class="collapsible-header collapsed" data-target="overviewGrid">
+      <span class="collapse-icon">▼</span>
+      <h3>数据概览图表</h3>
+    </div>
+    <div class="collapsible-body collapsed" id="overviewGrid">
+      <div class="overview-grid">
+        <div class="overview-card" id="cardStatus">
+          <h3>维修状态分布</h3>
+          <div class="ov-chart" id="chartStatus"></div>
+        </div>
+        <div class="overview-card" id="cardWorkshop">
+          <h3>车间分布</h3>
+          <div class="ov-chart" id="chartWorkshop"></div>
+        </div>
+        <div class="overview-card" id="cardCategory">
+          <h3>车间分类</h3>
+          <div class="ov-chart" id="chartCategory"></div>
+        </div>
+        <div class="overview-card" id="cardUrgency">
+          <h3>紧急程度分布</h3>
+          <div class="ov-chart" id="chartUrgency"></div>
+        </div>
+        <div class="overview-card" id="cardShift">
+          <h3>班次分布</h3>
+          <div class="ov-chart" id="chartShift"></div>
+        </div>
+        <div class="overview-card" id="cardFaultLevel">
+          <h3>故障等级分布</h3>
+          <div class="ov-chart" id="chartFaultLevel"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="collapsible-section">
+    <div class="collapsible-header collapsed" data-target="dataPreview">
+      <span class="collapse-icon">▼</span>
+      <h3>数据预览（前 20 行）</h3>
+    </div>
+    <div class="collapsible-body collapsed" id="dataPreview">
+      <div class="data-preview">
+        <div class="preview-table-wrap">
+          <table class="preview-table" id="previewTable"></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="analysis-entry">
+    <h3>分析面板 · 81 种分析方法 · 综合评分排序</h3>
+    <p class="ae-desc">数据已就绪。从左侧方法浏览器选择分析方法，右侧展示分析结果。可按维度和综合评分筛选。综合评分 = 业务价值×60% + 易用性×40%。</p>
+
+    <div class="analysis-layout">
+      <div class="analysis-browser">
+        <input type="text" class="method-search" id="methodSearch" placeholder="搜索分析方法…">
+        <div class="filter-row">
+          <div class="filter-group">
+            <span class="filter-label">维度</span>
+            <select id="filterDimension" class="filter-select">
+              <option value="">全部</option>
+              <option value="1">① 描述性统计</option>
+              <option value="2">② 排名与帕累托</option>
+              <option value="3">③ 时间趋势</option>
+              <option value="4">④ 设备可靠性</option>
+              <option value="5">⑤ 维修效率</option>
+              <option value="6">⑥ 成本与影响</option>
+              <option value="7">⑦ 评分与质量</option>
+              <option value="8">⑧ 相关性分析</option>
+              <option value="9">⑨ 回归与预测</option>
+              <option value="10">⑩ 文本分析</option>
+              <option value="11">⑪ 大数据分析</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <span class="filter-label">综合评分</span>
+            <select id="filterScore" class="filter-select">
+              <option value="">全部</option>
+              <option value="4.5">★★★★★ 4.5+</option>
+              <option value="4">★★★★ 4.0+</option>
+              <option value="3.5">★★★ 3.5+</option>
+              <option value="3">★★ 3.0+</option>
+            </select>
+          </div>
+        </div>
+        <div class="method-list" id="methodList"></div>
+      </div>
+
+      <div class="analysis-exec" id="analysisExec">
+        <div class="exec-placeholder">
+          <p>← 从左侧选择一个分析方法开始</p>
+          <p class="exec-hint">共 81 种方法可用</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="modal" id="exportModal" aria-hidden="true">
+  <div class="modal-paper">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <h2>导出数据<span class="mp-sub">Export</span></h2>
+    <p class="mp-q">选择要导出的内容：</p>
+    <div class="mp-opt" id="optSummary"><input type="checkbox" checked><div><b>数据概览摘要</b><br><span style="font-size:.82rem;color:var(--ink-faded)">CSV 格式，含各维度统计</span></div></div>
+    <div class="mp-opt" id="optRaw"><input type="checkbox"><div><b>原始数据（JSON）</b><br><span style="font-size:.82rem;color:var(--ink-faded)">解析后的完整数据集</span></div></div>
+    <div class="mp-actions">
+      <button class="btn-ghost" id="exportCancel">返回</button>
+      <button class="btn-primary" id="exportGo">确认下载</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" aria-live="polite"></div>
+
+<footer class="colophon">
+  <span>排版用字 · Noto Serif SC / EB Garamond / JetBrains Mono / Special Elite</span>
+  <span>维修数据分析 · Maintenance Analysis · v0.1</span>
+</footer>
+
+<script src="xlsx.full.min.js"></script>
+<script src="jszip.min.js"></script>
+<script src="chart.umd.min.js"></script>
+<script src="simple-statistics.min.js"></script>
+<script src="charts.js?v=1"></script>
+<script src="analysis.js?v=8"></script>
+<script src="app.js?v=7"></script>
+</body>
+</html>
