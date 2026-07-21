@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>维修数据分析 · Maintenance Analysis</title>
+<title>维修数据分析 · Maintenance Data Analysis</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&family=Noto+Serif+SC:wght@400;500;700;900&family=Special+Elite&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="lib/styles.css?v=25">
 </head>
 <body>
 <div class="grain" aria-hidden="true"></div>
@@ -19,7 +19,7 @@
   </div>
   <h1 class="title">
     <span class="title-main">维&nbsp;修&nbsp;数&nbsp;据&nbsp;分&nbsp;析</span>
-    <span class="title-sub">Maintenance Analysis</span>
+    <span class="title-sub">Maintenance Data Analysis</span>
   </h1>
   <div class="mast-right"></div>
   <div class="rule-thick"></div>
@@ -46,8 +46,9 @@
       <ol>
         <li>读取 <b>Data</b> 主表，自动识别 57 列字段（维修单编号、状态、车间、设备、故障、维修时长等）。</li>
         <li>载入后展示<b>数据概览</b>：总行数、车间分布、故障类型分布、维修状态分布等关键统计。</li>
-        <li>进入<b>分析面板</b>后可选择多种分析维度（简单统计、趋势分析、帕累托分析、设备MTBF/MTTR等）。</li>
-        <li>支持<b>导出分析</b>：将分析结果导出为 PDF 或 Excel 文件。</li>
+        <li>进入<b>分析面板</b>后可选择 81 种分析方法（描述性统计、趋势分析、帕累托分析、设备MTBF/MTTR、回归预测、文本分析等），每种方法自动生成<b>分析结论</b>。</li>
+        <li>系统自动生成<b>智能分析建议</b>：基于全局和车间维度交叉分析，按严重程度排序给出改进建议。</li>
+        <li>支持<b>导出报告</b>：PDF 含封面、智能建议、涉及字段/分析方法/分析结论及图表表格；Excel 含封面、目录跳转页及各方法数据。</li>
       </ol>
     </aside>
   </div>
@@ -116,12 +117,38 @@
     </div>
   </div>
 
+  <div class="collapsible-section">
+    <div class="collapsible-header collapsed" data-target="suggestionsSection">
+      <span class="collapse-icon">▼</span>
+      <h3>智能分析建议<span class="suggestion-count" id="suggestionCount"></span></h3>
+    </div>
+    <div class="collapsible-body collapsed" id="suggestionsSection">
+      <div class="suggestions-list" id="suggestionsList">
+        <p class="suggestion-loading">分析中…</p>
+      </div>
+    </div>
+  </div>
+
   <div class="analysis-entry">
     <h3>分析面板 · 81 种分析方法</h3>
     <p class="ae-desc">数据已就绪。从左侧方法浏览器选择分析方法，右侧展示分析结果。可按维度和综合评分筛选。综合评分 = 业务价值×60% + 易用性×40%。</p>
 
     <div class="analysis-layout">
       <div class="analysis-browser">
+        <div class="data-filter-row">
+          <div class="df-group">
+            <span class="df-label">年月</span>
+            <div class="df-multi" id="afMonthWrap">
+              <button type="button" class="df-multi-btn" id="afMonthBtn">全部年月</button>
+              <div class="df-multi-panel" id="afMonthPanel"></div>
+            </div>
+          </div>
+          <div class="df-group">
+            <span class="df-label">车间</span>
+            <select id="afWorkshop" class="df-select"><option value="">全部车间</option></select>
+          </div>
+          <span class="df-count" id="afCount"></span>
+        </div>
         <input type="text" class="method-search" id="methodSearch" placeholder="搜索分析方法…">
         <div class="filter-row">
           <div class="filter-group">
@@ -169,15 +196,25 @@
   <div class="modal-paper">
     <div class="corner tl"></div><div class="corner tr"></div>
     <div class="corner bl"></div><div class="corner br"></div>
-    <h2>导出分析<span class="mp-sub">Export</span></h2>
+    <h2>导出报告<span class="mp-sub">Export Report</span></h2>
+    <p class="mp-q">数据筛选：</p>
+    <div class="data-filter-row modal-filter-row">
+      <div class="df-group">
+        <span class="df-label">年月</span>
+        <div class="df-multi" id="efMonthWrap">
+          <button type="button" class="df-multi-btn" id="efMonthBtn">全部年月</button>
+          <div class="df-multi-panel" id="efMonthPanel"></div>
+        </div>
+      </div>
+      <div class="df-group">
+        <span class="df-label">车间</span>
+        <select id="efWorkshop" class="df-select"><option value="">全部车间</option></select>
+      </div>
+    </div>
     <p class="mp-q">导出格式：</p>
-    <div class="mp-opt"><label><input type="radio" name="exportFmt" value="pdf" checked> <b>PDF</b> <span style="font-size:.82rem;color:var(--ink-faded)">每个分析占一页，含图表和表格</span></label></div>
-    <div class="mp-opt"><label><input type="radio" name="exportFmt" value="excel"> <b>Excel</b> <span style="font-size:.82rem;color:var(--ink-faded)">每个分析占一个 Sheet，含表格数据</span></label></div>
+    <div class="mp-opt"><label><input type="radio" name="exportFmt" value="pdf" checked> <b>PDF</b> <span style="font-size:.82rem;color:var(--ink-faded)">封面 + 智能建议 + 各方法（含字段/方法/结论/图表/表格）</span></label></div>
+    <div class="mp-opt"><label><input type="radio" name="exportFmt" value="excel"> <b>Excel</b> <span style="font-size:.82rem;color:var(--ink-faded)">封面 + 目录跳转 + 各方法 Sheet（含字段/方法/结论/表格）</span></label></div>
     <div class="mp-opt"><label><input type="radio" name="exportFmt" value="both"> <b>PDF + Excel</b> <span style="font-size:.82rem;color:var(--ink-faded)">同时导出两份文件</span></label></div>
-    <p class="mp-q" style="margin-top:1rem">分析范围：</p>
-    <div class="mp-opt"><label><input type="radio" name="exportScope" value="all" checked> <b>全部</b> <span style="font-size:.82rem;color:var(--ink-faded)">导出所有分析方法 <span id="cntAll"></span></span></label></div>
-    <div class="mp-opt"><label><input type="radio" name="exportScope" value="5"> <b>综合评分 5 分</b> <span style="font-size:.82rem;color:var(--ink-faded)">仅导出最高评分分析 <span id="cnt5"></span></span></label></div>
-    <div class="mp-opt"><label><input type="radio" name="exportScope" value="4"> <b>综合评分 4 分及以上</b> <span style="font-size:.82rem;color:var(--ink-faded)">导出高评分分析 <span id="cnt4"></span></span></label></div>
     <div class="mp-actions">
       <button class="btn-ghost" id="exportCancel">返回</button>
       <button class="btn-primary" id="exportGo">确认导出</button>
@@ -189,16 +226,16 @@
 
 <footer class="colophon">
   <span>排版用字 · Noto Serif SC / EB Garamond / JetBrains Mono / Special Elite</span>
-  <span>维修数据分析 · Maintenance Analysis · v1.0</span>
+  <span>维修数据分析 · Maintenance Data Analysis · v1.1</span>
 </footer>
 
-<script src="xlsx.full.min.js"></script>
-<script src="exceljs.min.js"></script>
-<script src="chart.umd.min.js"></script>
-<script src="simple-statistics.min.js"></script>
-<script src="jspdf.umd.min.js"></script>
-<script src="charts.js?v=5"></script>
-<script src="analysis.js?v=12"></script>
-<script src="app.js?v=69"></script>
+<script src="lib/xlsx.full.min.js"></script>
+<script src="lib/exceljs.min.js"></script>
+<script src="lib/chart.umd.min.js"></script>
+<script src="lib/simple-statistics.min.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/charts.js?v=5"></script>
+<script src="lib/analysis.js?v=12"></script>
+<script src="lib/app.js?v=107"></script>
 </body>
 </html>
