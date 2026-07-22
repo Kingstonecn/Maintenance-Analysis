@@ -360,6 +360,7 @@ function extractTables(html) {
   return tableData;
 }
 
+let _suggestionDocClickHandler = null;
 async function generateSuggestions() {
   const listEl = $('#suggestionsList');
   const countEl = $('#suggestionCount');
@@ -477,8 +478,9 @@ function buildSuggestions(globalResults, workshopResults, workshopNames) {
     const key = (scope || 'global') + '|' + text.replace(/\d+(\.\d+)?/g, '#');
     if (seen.has(key)) return;
     seen.add(key);
-    const names = methodIds.map(methodName).filter(Boolean);
-    suggestions.push({ severity, text, methods: names, scope: scope || 'global', group: group || '' });
+    const ids = [...new Set(methodIds.filter(id => ANALYSIS_METHODS.find(am => am.id === id)))];
+    const names = ids.map(methodName).filter(Boolean);
+    suggestions.push({ severity, text, methods: names, methodIds: ids, scope: scope || 'global', group: group || '' });
   }
   runGlobalRules(globalResults, add);
   for (const ws of workshopNames) runWorkshopRules(ws, workshopResults[ws], globalResults, add);
@@ -555,14 +557,15 @@ function mergeSuggestions(suggestions) {
         const text = s.text.replace(s.scope, '').replace(/^[\s的]+/, '');
         return meta.extract(s, text);
       }).join('、');
-      result.push({ severity: sev, text: items.length + ' 个车间的' + meta.summary + '：' + detail, methods: items[0].methods, scope: 'multi', group: g });
+      result.push({ severity: sev, text: items.length + ' 个车间的' + meta.summary + '：' + detail, methods: items[0].methods, methodIds: items[0].methodIds, scope: 'multi', group: g });
     } else if (g.startsWith('diag_general_')) {
       const desc = g.replace('diag_general_', '');
       const detail = items.map(s => s.scope).join('、');
-      result.push({ severity: sev, text: items.length + ' 个车间的综合诊断：存在 ' + desc + ' 等多个问题，建议制定综合改进计划——涉及车间：' + detail, methods: items[0].methods, scope: 'multi', group: g });
+      const rec = items[0].text.match(/建议：(.+?)。/);
+      result.push({ severity: sev, text: items.length + ' 个车间的综合诊断：存在 ' + desc + ' 等多个问题，建议：' + (rec ? rec[1] : '制定综合改进计划') + '——涉及车间：' + detail, methods: items[0].methods, methodIds: items[0].methodIds, scope: 'multi', group: g });
     } else {
       const detail = items.map(s => s.text.replace(s.scope, '').replace(/^[\s的]+/, '')).join('；');
-      result.push({ severity: sev, text: items.length + ' 个车间存在相同问题：' + detail, methods: items[0].methods, scope: 'multi', group: g });
+      result.push({ severity: sev, text: items.length + ' 个车间存在相同问题：' + detail, methods: items[0].methods, methodIds: items[0].methodIds, scope: 'multi', group: g });
     }
   }
   return result;
@@ -631,11 +634,14 @@ function getRepeatFaultCount(r, id) {
 }
 function getLowMTBFName(r, id) {
   if (!r[id] || !r[id].tables.length || !r[id].tables[0].rows) return null;
+  let worst = null;
   for (const row of r[id].tables[0].rows) {
     const mtbf = parseNum(row[3]);
-    if (mtbf != null && mtbf < 7) return { name: row[1], mtbf };
+    if (mtbf != null && mtbf < 7 && (!worst || mtbf < worst.mtbf)) {
+      worst = { name: row[1], mtbf };
+    }
   }
-  return null;
+  return worst;
 }
 function getAFaultPct(r, id) {
   if (!r[id] || !r[id].tables.length || !r[id].tables[0].rows) return null;
@@ -704,7 +710,7 @@ function runCrossWorkshopComparison(workshopResults, workshopNames, gr, add) {
     if (wr[39] && wr[39].tables.length) m.waitPct = findCellValue(wr[39].tables[0], '等待占比', 1);
     if (wr[10] && wr[10].tables.length) m.durMean = findCellValue(wr[10].tables[0], '均值', 1);
     if (wr[12] && wr[12].tables.length) m.costMean = findCellValue(wr[12].tables[0], '维修总价值(AQ) 均值', 1);
-    if (wr[54] && wr[54].tables.length) m.scoreMean = findCellValue(wr[54].tables[0], '均值', 1);
+    m.scoreMean = getFirstRowVal(wr, 57, 2);
     const up = getUrgentPct(wr, 8);
     if (up != null) m.urgentPct = up;
     metrics[ws] = m;
@@ -745,7 +751,8 @@ function runCrossDiagnosis(ws, wr, gr, add) {
   const gCost = getRowByLabel(gr, 12, '维修总价值(AQ) 均值', 1);
   if (costMean != null && gCost != null && costMean > gCost * 1.5) push('highCost', [12, 47, 51]);
   if (getRowByLabel(wr, 39, '等待占比', 1) > 30) push('highWait', [39, 11, 42]);
-  if (getRowByLabel(wr, 54, '均值', 1) != null && getRowByLabel(wr, 54, '均值', 1) < 3) push('lowScore', [54, 58, 59]);
+  const wsScore = getFirstRowVal(wr, 57, 2);
+  if (wsScore != null && wsScore < 3) push('lowScore', [54, 58, 59]);
   if (gr[44] && gr[44].tables.length) {
     for (const row of gr[44].tables[0].rows) {
       if (String(row[0]) === ws) {
@@ -788,8 +795,17 @@ function runCrossDiagnosis(ws, wr, gr, add) {
     highUrgent: '突发维修多', risingTrend: '维修量上升', repeatFault: '重复故障',
     highOutsource: '委外费用高', workloadImbalance: '工作量不均',
   };
+  const recs = {
+    faultConcentration: '对高频故障设备开展专项分析', lowMTBF: '评估关键设备更换或大修时机',
+    highCost: '加强成本审核与预算管控', highWait: '优化派单流程缩短等待时间',
+    lowScore: '建立维修质量考核机制', highReject: '统一维修申请标准并加强培训',
+    highUrgent: '提高预防性维护频率', risingTrend: '排查设备老化趋势并提前干预',
+    repeatFault: '对重复故障设备开展根因分析', highOutsource: '提升自修能力减少委外依赖',
+    workloadImbalance: '调整维修人员任务分配',
+  };
   const desc = issues.map(i => labels[i.key] || i.key).join('、');
-  add(sev, ws + ' 综合诊断：存在 ' + desc + ' 等多个问题，建议制定综合改进计划。', allM, ws, 'diag_general_' + desc);
+  const rec = issues.map(i => recs[i.key]).filter(Boolean).join('；');
+  add(sev, ws + ' 综合诊断：存在 ' + desc + ' 等多个问题，建议：' + rec + '。', allM, ws, 'diag_general_' + desc);
 }
 
 const SEVERITY_ICONS = { high: '🔴', medium: '🟡', low: '🟢' };
@@ -807,14 +823,52 @@ function renderSuggestions(suggestions) {
     const order = { high: 0, medium: 1, low: 2 };
     return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
   });
-  listEl.innerHTML = sorted.map(s =>
-    '<div class="suggestion-item">' +
-    '<span class="suggestion-severity">' + (SEVERITY_ICONS[s.severity] || '⚪') + '</span>' +
-    '<span class="suggestion-text">' + esc(s.text) + '</span>' +
-    '<span class="suggestion-info"><span class="suggestion-info-icon">ℹ️</span>' +
-    '<span class="suggestion-info-tip">分析方法：' + s.methods.join('、') + '</span></span>' +
-    '</div>'
-  ).join('');
+  listEl.innerHTML = sorted.map((s, i) => {
+    const ids = s.methodIds || [];
+    const lines = ids.length ? ids.map((id, j) => {
+      const m = ANALYSIS_METHODS.find(am => am.id === id);
+      if (!m) return '';
+      return '<div class="suggestion-method-link" data-mid="' + id + '">' +
+        '<span class="sml-num">' + (j + 1) + '.</span>' +
+        '<span class="sml-name">' + esc(m.name) + '</span>' +
+        '<span class="sml-desc">' + esc(m.desc) + '</span></div>';
+    }).join('') : '<div class="smp-empty">无关联分析方法</div>';
+    return '<div class="suggestion-item">' +
+      '<span class="suggestion-severity">' + (SEVERITY_ICONS[s.severity] || '⚪') + '</span>' +
+      '<span class="suggestion-text">' + esc(s.text) + '</span>' +
+      '<span class="suggestion-info"><span class="suggestion-info-icon" data-sug-idx="' + i + '">ℹ️</span>' +
+      '<div class="suggestion-method-panel" data-sug-idx="' + i + '"><div class="smp-header">分析方法（点击跳转）<span class="smp-close">✕</span></div>' + lines + '</div></span>' +
+      '</div>';
+  }).join('');
+  $$('.suggestion-info-icon', listEl).forEach(icon => {
+    icon.addEventListener('click', e => {
+      e.stopPropagation();
+      const idx = icon.dataset.sugIdx;
+      const panel = listEl.querySelector('.suggestion-method-panel[data-sug-idx="' + idx + '"]');
+      const wasOpen = panel && panel.classList.contains('open');
+      $$('.suggestion-method-panel.open', listEl).forEach(p => p.classList.remove('open'));
+      if (panel && !wasOpen) panel.classList.add('open');
+    });
+  });
+  $$('.suggestion-method-panel', listEl).forEach(panel => {
+    panel.addEventListener('click', e => {
+      e.stopPropagation();
+      if (e.target.classList.contains('smp-close')) { panel.classList.remove('open'); return; }
+      const link = e.target.closest('.suggestion-method-link');
+      if (link) {
+        const mid = parseInt(link.dataset.mid);
+        selectMethod(mid);
+        document.querySelector('.analysis-entry').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+  document.removeEventListener('click', _suggestionDocClickHandler);
+  _suggestionDocClickHandler = function(e) {
+    if (!e.target.closest('.suggestion-info')) {
+      $$('.suggestion-method-panel.open', listEl).forEach(p => p.classList.remove('open'));
+    }
+  };
+  document.addEventListener('click', _suggestionDocClickHandler);
 }
 
 /* ---- 分析面板 ---- */
@@ -937,7 +991,7 @@ function generateConclusion(methodId, tables) {
 
   switch (methodId) {
     case 1: { // 维修单总量与状态分布
-      const total = num(rows[0][1]);
+      const total = rows.reduce((s, r) => s + num(r[1]), 0);
       const rej = rows.find(r => /驳回/.test(r[0]));
       const rejPct = rej ? num(rej[2]) : 0;
       if (rejPct > 15) return '驳回率 ' + rejPct.toFixed(1) + '% 偏高，建议统一维修申请标准并加强需求描述培训，减少无效审批流转。';
@@ -1169,15 +1223,15 @@ function generateConclusion(methodId, tables) {
       }
       return '无';
     }
-    case 38: { // 设备健康度评分
+    case 38: { // 设备风险度评分
       const top = rows[0];
-      return '健康度评分最高的设备「' + top[1] + '」（评分 ' + top[5] + '），是优先关注和投入资源的目标，建议纳入设备分级管理。';
+      return '风险度评分最高的设备「' + top[1] + '」（评分 ' + top[5] + '），是优先关注和投入资源的目标，建议纳入设备分级管理。';
     }
     case 39: { // 等待 vs 维修时长占比
       const waitPct = findVal('等待占比');
       if (waitPct) {
-        if (num(waitPct) > 30) return '等待占比 ' + waitPct + '%，超过 30%，派单流程需优化，建议缩短维修响应时间。';
-        return '等待占比 ' + waitPct + '%，流程效率正常。';
+        if (num(waitPct) > 30) return '等待占比 ' + waitPct + '，超过 30%，派单流程需优化，建议缩短维修响应时间。';
+        return '等待占比 ' + waitPct + '，流程效率正常。';
       }
       return '无';
     }
@@ -1225,8 +1279,8 @@ function generateConclusion(methodId, tables) {
       const meanV = findVal('均值');
       if (meanV) {
         const m = num(meanV);
-        if (m < 3) return '及时性评分均值 ' + m.toFixed(2) + '，结单及时性良好。';
-        return '及时性评分均值 ' + m.toFixed(2) + '，偏低，结单不及时，建议考核维修团队响应速度。';
+        if (m < 3) return '及时性评分均值 ' + m.toFixed(2) + '，偏低，结单不及时，建议考核维修团队响应速度。';
+        return '及时性评分均值 ' + m.toFixed(2) + '，结单及时性良好。';
       }
       return '无';
     }
@@ -1238,8 +1292,8 @@ function generateConclusion(methodId, tables) {
       const partsPct = findVal('备件占比');
       const outPct = findVal('委外占比');
       if (outPct) {
-        if (num(outPct) > 50) return '委外费用占比 ' + outPct + '%，超过备件费用，建议评估自修能力是否不足并增加维修技能培训。';
-        return '备件占比 ' + partsPct + '%，委外占比 ' + outPct + '%，成本结构合理。';
+        if (num(outPct) > 50) return '委外费用占比 ' + outPct + '，超过备件费用，建议评估自修能力是否不足并增加维修技能培训。';
+        return '备件占比 ' + partsPct + '，委外占比 ' + outPct + '，成本结构合理。';
       }
       return '无';
     }
@@ -1348,6 +1402,7 @@ function generateConclusion(methodId, tables) {
         const c = num(corr);
         if (c > -0.1 && c < 0.1) return '参与人数与维修时长相关系数 ' + corr + '，几乎无相关性，增加人数未缩短时长，说明协作效率低，建议优化维修人员配置。';
         if (c < -0.3) return '参与人数与维修时长相关系数 ' + corr + '，负相关，增加人数有助于缩短时长，但需注意边际效益。';
+        if (c < -0.1) return '参与人数与维修时长相关系数 ' + corr + '，弱负相关，增加人数有一定帮助缩短时长。';
         return '参与人数与维修时长相关系数 ' + corr + '，存在一定正相关，人数增多反而时长增加，建议评估协作模式。';
       }
       return '无';
@@ -1415,7 +1470,7 @@ function generateConclusion(methodId, tables) {
     }
     case 78: { // 季节性分解
       if (rows.length < 6) return '数据不足，无法进行季节性分解。';
-      return '趋势/季节性/残差三分解已展示，建议关注季节性指数大于 0 的月份，这些是维修高峰期，可据此制定季节性预防性维护计划。';
+      return '趋势/季节性/残差三分解已展示，建议关注季节性分量大于 0 的月份，这些是维修高峰期，可据此制定季节性预防性维护计划。';
     }
     case 79: { // 设备K-Means聚类
       const highFreq = rows.find(r => /高频高耗/.test(r[0]));
@@ -1423,8 +1478,8 @@ function generateConclusion(methodId, tables) {
       return '设备聚类已展示，建议关注高频高耗聚类的设备，进行分级管理。';
     }
     case 80: { // ARIMA维修量预测
-      const lastRow = rows[rows.length - 1];
-      if (lastRow && /预测/.test(lastRow[0])) return 'ARIMA 模型预测下月维修量为 ' + lastRow[2] + ' 条，建议据此进行中长期维修资源规划。';
+      const forecastRow = rows.find(r => /预测/.test(String(r[0])));
+      if (forecastRow) return 'ARIMA 模型预测下月维修量为 ' + forecastRow[2] + ' 条，建议据此进行中长期维修资源规划。';
       return '数据不足以拟合 ARIMA 模型。';
     }
     case 81: { // TF-IDF关键词分析
