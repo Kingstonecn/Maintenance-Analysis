@@ -22,8 +22,8 @@ const COLS = [
   {L:'N',cn:'资产编码',en:'Asset Code',type:'text'},
   {L:'O',cn:'存放位置',en:'Location',type:'text'},
   {L:'P',cn:'故障等级',en:'Fault Level',type:'enum'},
-  {L:'Q',cn:'紧急程度',en:'Urgency',type:'enum'},
-  {L:'R',cn:'重复故障关联',en:'Repeat Fault',type:'text'},
+  {L:'Q',cn:'紧急程度中文',en:'Urgency',type:'enum'},
+  {L:'R',cn:'重复故障关联记录',en:'Repeat Fault',type:'text'},
   {L:'S',cn:'班次',en:'Shift',type:'enum'},
   {L:'T',cn:'问题描述',en:'Description',type:'text'},
   {L:'U',cn:'申请人',en:'Applicant',type:'text'},
@@ -182,14 +182,17 @@ async function handleFile(file) {
     const m = ref.match(/A\d+:(\w+?)(\d+)/);
     if (!m) { toast('表格式不对：无法识别数据范围（' + ref + '）'); return; }
     const maxCol = colToIdx(m[1]) + 1;
-    if (maxCol < COLS.length) {
-      toast('表格式不对：期望至少 ' + COLS.length + ' 列（A~' + COLS[COLS.length - 1].L + '），实际仅 ' + maxCol + ' 列');
+    const colRemap = buildColRemap(ws, maxCol);
+    const found = new Set(Object.values(colRemap));
+    const missing = COLS.filter(c => !found.has(c.L)).map(c => c.cn);
+    if (missing.length) {
+      toast('缺少必要列：' + missing.slice(0, 5).join('、') + (missing.length > 5 ? '…' : '') + '（共 ' + missing.length + ' 列）');
       return;
     }
     const maxRow = parseInt(m[2]);
     if (maxRow < 2) { toast('工作表无数据行：仅有表头，缺少数据'); return; }
     S.fileName = name;
-    parseData(ws);
+    parseData(ws, colRemap);
     if (!S.rows.length) { toast('解析后无有效数据行：所有行均为空'); return; }
     computeStats();
     showOverview();
@@ -201,7 +204,34 @@ async function handleFile(file) {
 }
 
 /* ---- 解析数据 ---- */
-function parseData(ws) {
+function buildColRemap(ws, maxCol) {
+  const expectedByName = {};
+  COLS.forEach(c => { expectedByName[c.cn] = c.L; });
+  const remap = {};
+  const used = new Set();
+  for (let c = 0; c < maxCol; c++) {
+    const actualLetter = XLSX.utils.encode_col(c);
+    const headerCell = ws[actualLetter + '1'];
+    if (!headerCell || headerCell.v == null) continue;
+    const name = String(headerCell.v).trim();
+    if (expectedByName[name] && !used.has(expectedByName[name])) {
+      remap[actualLetter] = expectedByName[name];
+      used.add(expectedByName[name]);
+      continue;
+    }
+    for (const cn in expectedByName) {
+      if (used.has(expectedByName[cn])) continue;
+      if (name.includes(cn)) {
+        remap[actualLetter] = expectedByName[cn];
+        used.add(expectedByName[cn]);
+        break;
+      }
+    }
+  }
+  return remap;
+}
+
+function parseData(ws, colRemap) {
   const ref = ws['!ref'];
   if (!ref) { S.rows = []; return; }
   const m = ref.match(/A\d+:(\w+?)(\d+)/);
@@ -213,15 +243,18 @@ function parseData(ws) {
     const row = {};
     let hasData = false;
     for (let c = 0; c < maxCol; c++) {
-      const colLetter = XLSX.utils.encode_col(c);
-      const cell = ws[colLetter + r];
+      const actualLetter = XLSX.utils.encode_col(c);
+      const expectedLetter = colRemap[actualLetter];
+      if (!expectedLetter) continue;
+      const cell = ws[actualLetter + r];
       if (cell && cell.v != null && cell.v !== '') {
-        row[colLetter] = cell.v;
+        row[expectedLetter] = cell.v;
         hasData = true;
       }
     }
     if (hasData) S.rows.push(row);
   }
+  return colRemap;
 }
 
 /* ---- 统计计算 ---- */
